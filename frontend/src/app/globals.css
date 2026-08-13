@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/*
+ * OdoSync design system — light, committed (internal operational tool).
+ * A quiet off-white canvas; white "artifact" cards are lifted by elevation
+ * (soft shadow + hairline), not by color. Tailwind v4 is CSS-first: tokens
+ * below generate utilities
+ * (bg-base, text-ink, border-line, bg-good/10, rounded-card, shadow-float, …).
+ */
+@theme {
+  /* Surfaces */
+  --color-base: #fafaf8; /* soft off-white canvas, not pure white */
+  --color-surface: #ffffff; /* panels / cards, pure white */
+  --color-raised: #ffffff; /* floating artifacts — lifted by shadow, not color */
+
+  /* Ink */
+  --color-ink: #14151a; /* near-black primary text, not pure black */
+  --color-muted: #6b6d76; /* labels, captions, supporting text */
+
+  /* Lines */
+  --color-line: #e7e7e3; /* 1px hairline dividers / card outlines */
+
+  /* Accents — used ONLY for state, never decoration. One accent per element. */
+  --color-good: #1d9a6c; /* positive: booked / success (tuned for contrast on white) */
+  --color-warn: #c77c1f; /* action-needed: no-answer / callback */
+
+  /* Type — Geist (self-hosted via the `geist` package) with system fallbacks */
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Arial, sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, monospace;
+
+  /* Shape */
+  --radius-card: 14px;
+
+  /* Elevation — soft ink-tinted ambient (no white bevel; that's a dark-mode trick) */
+  --shadow-card:
+    0 1px 2px rgba(20, 21, 26, 0.04), 0 8px 24px -12px rgba(20, 21, 26, 0.1);
+  --shadow-float:
+    0 4px 12px -2px rgba(20, 21, 26, 0.08), 0 24px 48px -16px rgba(20, 21, 26, 0.16);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  min-height: 100%;
+  background-color: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Quiet, on-theme scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-line);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #d4d4ce;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-good) 28%, transparent);
+  color: var(--color-ink);
+}
+
+/* Respect reduced-motion for the few subtle transitions used in the UI */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

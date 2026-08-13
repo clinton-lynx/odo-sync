@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Build output (tsc -> dist)
+dist/
+*.tsbuildinfo
+
+# Environment — keep .env.example, ignore real secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Local embedded dev database (scripts/dev-db.mjs)
+.dev-db/

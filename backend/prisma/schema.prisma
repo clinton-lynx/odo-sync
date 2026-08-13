@@ -1,0 +1,75 @@
+// OdoSync — Prisma schema
+// Datasource: PostgreSQL. Set DATABASE_URL in backend/.env
+// Regenerate client after edits:  npm run prisma:generate
+// Apply schema to a fresh DB:     npm run prisma:migrate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Vehicle {
+  regnNo              String     @id
+  makeModel           String
+  ownerName           String
+  phoneNumber         String // E.164 format
+  company             String?
+  department          String?
+  lastServiceDate     DateTime
+  lastServiceMileage  Int?
+  preferredWindow     CallWindow @default(MORNING)
+  callJobs            CallJob[]
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+}
+
+enum CallWindow {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+model CallJob {
+  id                String        @id @default(cuid())
+  vehicle           Vehicle       @relation(fields: [vehicleRegnNo], references: [regnNo])
+  vehicleRegnNo     String
+  stage             CallStage
+  scheduledFireDate DateTime
+  preferredWindow   CallWindow
+  status            CallJobStatus @default(PENDING)
+  result            CallResult?
+  createdAt         DateTime      @default(now())
+}
+
+enum CallStage {
+  FIFTEEN_DAY
+  TEN_DAY
+  FIVE_DAY
+}
+
+enum CallJobStatus {
+  PENDING
+  FIRED
+  CANCELLED
+}
+
+model CallResult {
+  id                      String      @id @default(cuid())
+  callJob                 CallJob     @relation(fields: [callJobId], references: [id])
+  callJobId               String      @unique
+  firedAt                 DateTime    @default(now())
+  outcome                 CallOutcome
+  proposedAppointmentDate DateTime?
+  notes                   String?
+}
+
+enum CallOutcome {
+  BOOKED
+  DECLINED
+  CALLBACK_REQUESTED
+  NO_ANSWER
+}
