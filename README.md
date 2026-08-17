@@ -106,6 +106,8 @@ fired or cancelled directly.
 The workshop profile and call-window defaults live in Postgres and feed the
 next CALL-E task without requiring a backend restart.
 
+![Settings with the workshop profile](docs/screenshots/settings.png)
+
 ---
 
 ## Prerequisites
