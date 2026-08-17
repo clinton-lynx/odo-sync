@@ -344,8 +344,7 @@ automated API-route, scheduler, or browser tests.
   (`BOOKED` / `DECLINED` / `CALLBACK_REQUESTED` / `NO_ANSWER`),
   `proposedAppointmentDate`, `notes`.
 
-See `backend/prisma/schema.prisma` for the authoritative schema, and
-[`docs/PRD.md`](docs/PRD.md) for the product rationale.
+See `backend/prisma/schema.prisma` for the authoritative schema.
 
 ---
 
@@ -365,7 +364,7 @@ odosync/
 │     ├─ lib/api.ts   typed REST client — the connection layer
 │     ├─ components/  IntakeForm, DashboardStats, ActionList (scaffold)
 │     └─ app/         dashboard, /intake, /settings
-└─ docs/              PRD.md, demo-script.md
+└─ docs/screenshots/  product walkthrough images
 ```
 
 ## Useful scripts
