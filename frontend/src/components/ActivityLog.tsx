@@ -21,6 +21,7 @@ import { useAsync } from "@/lib/useAsync";
 import {
   formatDate,
   formatDateTime,
+  formatShortDate,
   maskPhone,
   outcomeLabel,
   relativeDays,
@@ -66,13 +67,17 @@ function Row({
   expanded,
   onToggle,
   onCancel,
+  onCallNow,
   cancelling,
+  calling,
 }: {
   job: CallJobWithRelations;
   expanded: boolean;
   onToggle: () => void;
   onCancel: () => void;
+  onCallNow: () => void;
   cancelling: boolean;
+  calling: boolean;
 }) {
   const v = job.vehicle;
   const r = job.result;
@@ -80,41 +85,66 @@ function Row({
 
   return (
     <div className="border-b border-line/60 last:border-0">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-3 py-3 text-left transition hover:bg-ink/[0.03]"
-      >
-        <Pill tone="muted" className="hidden shrink-0 sm:inline-flex">
-          {stageLabel(job.stage)}
-        </Pill>
-        <div className="w-24 shrink-0 truncate font-mono text-sm text-ink">
-          {job.vehicleRegnNo}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-ink">{v?.ownerName ?? "—"}</div>
-          <div className="truncate font-mono text-xs text-muted">
-            {v ? maskPhone(v.phoneNumber) : "—"}
-          </div>
-        </div>
-        <div className="hidden w-24 shrink-0 text-right font-mono text-xs text-muted md:block">
-          {r ? formatDate(r.firedAt) : relativeDays(job.scheduledFireDate)}
-        </div>
-        <div className="flex w-24 shrink-0 justify-end">
-          {r ? (
-            <StatusBadge outcome={r.outcome} />
-          ) : (
-            <StatusBadge status={job.status} />
-          )}
-        </div>
-        <span
-          aria-hidden
-          className={`shrink-0 text-muted transition-transform ${expanded ? "rotate-90" : ""}`}
+      <div className="flex items-center gap-2 py-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left transition hover:bg-ink/[0.03]"
         >
-          ›
-        </span>
-      </button>
+          <Pill tone="muted" className="hidden shrink-0 sm:inline-flex">
+            {stageLabel(job.stage)}
+          </Pill>
+          <div className="w-24 shrink-0 truncate font-mono text-sm text-ink">
+            {job.vehicleRegnNo}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm text-ink">{v?.ownerName ?? "—"}</div>
+            <div className="truncate font-mono text-xs text-muted">
+              {v ? maskPhone(v.phoneNumber) : "—"}
+            </div>
+            {!r && (
+              <div className="truncate text-[10px] text-muted sm:hidden">
+                {formatShortDate(job.scheduledFireDate)} · {windowLabel(job.preferredWindow)}
+              </div>
+            )}
+          </div>
+          <div className="hidden w-44 shrink-0 text-right font-mono text-xs text-muted md:block">
+            {r ? (
+              formatDate(r.firedAt)
+            ) : (
+              <>
+                {relativeDays(job.scheduledFireDate)} ·{" "}
+                {formatShortDate(job.scheduledFireDate)} ·{" "}
+                {windowLabel(job.preferredWindow)}
+              </>
+            )}
+          </div>
+          <div className="flex w-24 shrink-0 justify-end">
+            {r ? (
+              <StatusBadge outcome={r.outcome} />
+            ) : (
+              <StatusBadge status={job.status} />
+            )}
+          </div>
+          <span
+            aria-hidden
+            className={`shrink-0 text-muted transition-transform ${expanded ? "rotate-90" : ""}`}
+          >
+            ›
+          </span>
+        </button>
+        {job.status === "PENDING" && (
+          <Button
+            variant="secondary"
+            onClick={onCallNow}
+            disabled={calling}
+            className="shrink-0 px-3 py-1.5 text-xs"
+          >
+            {calling ? "Calling…" : "Call now"}
+          </Button>
+        )}
+      </div>
 
       {expanded && (
         <div className="border-t border-dashed border-line px-1 pb-4 pt-3">
@@ -127,6 +157,19 @@ function Row({
               <>
                 <KV k="Fired" v={formatDateTime(r.firedAt)} />
                 <KV k="Outcome" v={outcomeLabel(r.outcome)} />
+                {r.calleCallId && <KV k="CALL-E task" v={r.calleCallId} />}
+                {r.providerCallId && (
+                  <KV k="Provider call" v={r.providerCallId} />
+                )}
+                {r.providerAttemptStatus && (
+                  <KV k="Provider status" v={r.providerAttemptStatus} />
+                )}
+                {r.providerFailureCode && (
+                  <KV k="Failure code" v={r.providerFailureCode} />
+                )}
+                {r.providerFailureMessage && (
+                  <KV k="Failure reason" v={r.providerFailureMessage} />
+                )}
                 {r.proposedAppointmentDate && (
                   <KV
                     k="Proposed appointment"
@@ -201,6 +244,7 @@ export default function ActivityLog() {
   const [to, setTo] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [callingId, setCallingId] = useState<string | null>(null);
 
   const jobs = useMemo(() => data ?? [], [data]);
 
@@ -236,6 +280,31 @@ export default function ActivityLog() {
       alert(String((e as Error)?.message ?? e));
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function callNow(job: CallJobWithRelations) {
+    const owner = job.vehicle?.ownerName ?? job.vehicleRegnNo;
+    if (!window.confirm(`Call ${owner} now?`)) return;
+    setCallingId(job.id);
+    try {
+      const summary = await api.fireCallJobs({
+        jobId: job.id,
+        respectWindow: false,
+        limit: 1,
+      });
+      if (summary.fired !== 1) {
+        throw new Error(
+          summary.failed > 0
+            ? "CALL-E could not complete this call."
+            : "This call job is no longer pending.",
+        );
+      }
+      reload();
+    } catch (e) {
+      alert(String((e as Error)?.message ?? e));
+    } finally {
+      setCallingId(null);
     }
   }
 
@@ -361,7 +430,9 @@ export default function ActivityLog() {
                 setExpandedId((id) => (id === job.id ? null : job.id))
               }
               onCancel={() => cancel(job.id)}
+              onCallNow={() => callNow(job)}
               cancelling={cancellingId === job.id}
+              calling={callingId === job.id}
             />
           ))
         )}

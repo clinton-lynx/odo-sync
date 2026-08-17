@@ -1,6 +1,10 @@
 import { CalleClient } from "@call-e/calle";
 import type { Call, CreateCallInput } from "@call-e/calle";
 import { CallOutcome, CallStage, type Vehicle } from "@prisma/client";
+import {
+  getWorkshopInfo,
+  type WorkshopInfo,
+} from "./workshop.js";
 
 /**
  * CALL-E client wrapper + per-stage call scripts.
@@ -29,7 +33,11 @@ export interface NormalizedCallResult {
   outcome: CallOutcome;
   proposedAppointmentDate: Date | null;
   notes: string | null;
+  calleCallId: string | null;
   providerCallId: string | null;
+  providerAttemptStatus: string | null;
+  providerFailureCode: string | null;
+  providerFailureMessage: string | null;
   dryRun: boolean;
 }
 
@@ -43,12 +51,42 @@ const STAGE_LABEL: Record<CallStage, string> = {
  * Per-stage call script. The 15-day call is a soft heads-up, the 10-day call
  * pushes to pick a slot, and the 5-day call is the final urgent reminder.
  */
-export function buildCallTask(vehicle: Vehicle, stage: CallStage): string {
-  const window = vehicle.preferredWindow.toLowerCase();
+export function formatCallTask(
+  vehicle: Vehicle,
+  stage: CallStage,
+  workshop: WorkshopInfo,
+  now: Date = new Date(),
+): string {
+  const todayStr = now.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
   const who = vehicle.ownerName;
   const car = `${vehicle.makeModel} (reg ${vehicle.regnNo})`;
-  const intro = `You are calling ${who} on behalf of the OdoSync service centre about their ${car}.`;
-  const windowNote = `If they want to book, offer appointment slots in the ${window}, matching their preferred call window.`;
+  const introParts = [
+    `You are calling ${who} on behalf of ${workshop.businessName} about their ${car}.`,
+    `Start the call by politely confirming you're speaking with ${who} — for example, "Hi, is this ${who}?" Do not guess a title or honorific; just use their name as given. Only continue with the reminder once you've confirmed you're speaking with the right person; if not, politely ask if you can leave a message or call back later.`,
+  ];
+  if (workshop.address) {
+    introParts.push(`The workshop is located at ${workshop.address}.`);
+  }
+  if (workshop.serviceDescription) {
+    const description = workshop.serviceDescription
+      .replace(/[.!?]+$/, "")
+      .replace(/^Includes\b/, "includes");
+    introParts.push(`A routine service ${description}.`);
+  }
+  if (workshop.operatingHours) {
+    introParts.push(`The workshop is open ${workshop.operatingHours}.`);
+  }
+  if (workshop.phoneNumber) {
+    introParts.push(`The workshop callback number is ${workshop.phoneNumber}.`);
+  }
+  introParts.push(`Today's date is ${todayStr}.`);
+  const intro = introParts.join(" ");
+  const bookingNote =
+    "If they want to book, ask what appointment date and time works for them and record what they propose.";
 
   switch (stage) {
     case CallStage.FIFTEEN_DAY:
@@ -56,23 +94,32 @@ export function buildCallTask(vehicle: Vehicle, stage: CallStage): string {
         intro,
         `Their next scheduled service is due in about ${STAGE_LABEL[stage]}.`,
         `Give a friendly heads-up that it's coming up and ask whether they'd like to book now or be reminded closer to the date.`,
-        windowNote,
+        bookingNote,
       ].join(" ");
     case CallStage.TEN_DAY:
       return [
         intro,
         `Their service is due in about ${STAGE_LABEL[stage]}.`,
         `Encourage them to lock in an appointment now and try to agree a specific date.`,
-        windowNote,
+        bookingNote,
       ].join(" ");
     case CallStage.FIVE_DAY:
       return [
         intro,
         `Their service is due in only ${STAGE_LABEL[stage]} — this is the final reminder.`,
         `Stress that slots are filling up and try hard to book a firm appointment date before the due date.`,
-        windowNote,
+        bookingNote,
       ].join(" ");
   }
+}
+
+/** Build a call task from the latest database-backed workshop settings. */
+export async function buildCallTask(
+  vehicle: Vehicle,
+  stage: CallStage,
+  now: Date = new Date(),
+): Promise<string> {
+  return formatCallTask(vehicle, stage, await getWorkshopInfo(), now);
 }
 
 /**
@@ -91,12 +138,14 @@ const RESULT_SCHEMA: NonNullable<CreateCallInput["resultSchema"]> = {
         "CALLBACK_REQUESTED if they asked to be called later; NO_ANSWER if nobody answered.",
     },
     proposedAppointmentDate: {
-      type: ["string", "null"],
-      description: "ISO 8601 date/time of the agreed appointment, or null.",
+      type: "string",
+      description:
+        "ISO 8601 date/time of the agreed appointment. Omit when no date was agreed.",
     },
     notes: {
-      type: ["string", "null"],
-      description: "Short free-text summary of anything relevant from the call.",
+      type: "string",
+      description:
+        "Short free-text summary of anything relevant from the call. Omit when empty.",
     },
   },
 };
@@ -117,8 +166,7 @@ function coerceDate(value: unknown): Date | null {
 /** Map the CALL-E Call object onto our normalized result. */
 function normalizeCall(call: Call): NormalizedCallResult {
   const structured = (call.structuredResult ?? {}) as Record<string, unknown>;
-  const providerCallId =
-    call.recipients?.[0]?.attempts?.[0]?.providerCallId ?? call.id;
+  const attempt = call.recipients?.[0]?.attempts?.[0];
 
   // If the task didn't complete (e.g. line never connected), treat as NO_ANSWER
   // unless CALL-E explicitly extracted a different outcome.
@@ -136,7 +184,12 @@ function normalizeCall(call: Call): NormalizedCallResult {
       (typeof structured.notes === "string" ? structured.notes : null) ??
       call.summary ??
       null,
-    providerCallId,
+    calleCallId: call.id,
+    providerCallId: attempt?.providerCallId ?? null,
+    providerAttemptStatus: attempt?.status ?? null,
+    providerFailureCode: attempt?.failureCode ?? call.failureCode ?? null,
+    providerFailureMessage:
+      attempt?.failureMessage ?? call.failureMessage ?? null,
     dryRun: false,
   };
 }
@@ -153,9 +206,46 @@ function simulateCall(vehicle: Vehicle, stage: CallStage): NormalizedCallResult 
     outcome: CallOutcome.BOOKED,
     proposedAppointmentDate: proposed,
     notes: `[DRY-RUN] Simulated ${STAGE_LABEL[stage]} reminder for ${vehicle.ownerName}. No real call placed (CALLE_API_KEY not set).`,
+    calleCallId: null,
     providerCallId: null,
+    providerAttemptStatus: null,
+    providerFailureCode: null,
+    providerFailureMessage: null,
     dryRun: true,
   };
+}
+
+/** Convert Nigerian local numbers to the E.164 format required by CALL-E. */
+export function normalizeCallPhoneNumber(phoneNumber: string): string {
+  const compact = phoneNumber.trim().replace(/[\s().-]/g, "");
+
+  if (/^0\d{10}$/.test(compact)) {
+    return `+234${compact.slice(1)}`;
+  }
+  if (/^234\d{10}$/.test(compact)) {
+    return `+${compact}`;
+  }
+  if (/^00234\d{10}$/.test(compact)) {
+    return `+${compact.slice(2)}`;
+  }
+
+  return compact;
+}
+
+/** Build the canonical CALL-E recipient list from a stored phone number. */
+export function buildCallRecipients(
+  phoneNumber: string,
+): NonNullable<CreateCallInput["recipients"]> {
+  const normalizedPhoneNumber = normalizeCallPhoneNumber(phoneNumber);
+
+  return [
+    {
+      phones: [normalizedPhoneNumber],
+      ...(normalizedPhoneNumber.startsWith("+234")
+        ? { region: "NG", locale: "en-NG" }
+        : {}),
+    },
+  ];
 }
 
 export interface PlaceCallArgs {
@@ -174,23 +264,31 @@ export async function placeServiceReminderCall({
   stage,
   idempotencyKey,
 }: PlaceCallArgs): Promise<NormalizedCallResult> {
-  const task = buildCallTask(vehicle, stage);
+  const task = await buildCallTask(vehicle, stage);
+  const callInput: CreateCallInput = {
+    task,
+    recipients: buildCallRecipients(vehicle.phoneNumber),
+    resultSchema: RESULT_SCHEMA,
+    metadata: { regnNo: vehicle.regnNo, stage },
+  };
 
   if (!client) {
     console.log(
-      `[calle] DRY-RUN — would call ${vehicle.phoneNumber} (${vehicle.ownerName}) | stage=${stage}\n        task: ${task}`,
+      `[calle] DRY-RUN — CALL-E payload:\n${JSON.stringify(callInput, null, 2)}`,
     );
     return simulateCall(vehicle, stage);
   }
 
   const call = await client.calls.createAndWait(
-    {
-      task,
-      recipient: { phone: vehicle.phoneNumber },
-      resultSchema: RESULT_SCHEMA,
-      metadata: { regnNo: vehicle.regnNo, stage },
-    },
+    callInput,
     idempotencyKey ? { idempotencyKey } : undefined,
+  );
+
+  const attempt = call.recipients?.[0]?.attempts?.[0];
+  console.log(
+    `[calle] call=${call.id} status=${call.status} ` +
+      `attempt=${attempt?.status ?? "none"} providerCall=${attempt?.providerCallId ?? "none"} ` +
+      `failure=${attempt?.failureCode ?? call.failureCode ?? "none"}`,
   );
 
   return normalizeCall(call);

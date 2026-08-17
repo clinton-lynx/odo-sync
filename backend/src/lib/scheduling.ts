@@ -109,6 +109,8 @@ export interface FireOptions {
   respectWindow?: boolean;
   /** Restrict to a single vehicle (handy for demos/tests). */
   regnNo?: string;
+  /** Fire one specific pending job, including before its scheduled date. */
+  jobId?: string;
   /** Cap how many jobs to fire in one pass. */
   limit?: number;
 }
@@ -143,7 +145,9 @@ export async function fireDueCallJobs(
   const due = await prisma.callJob.findMany({
     where: {
       status: CallJobStatus.PENDING,
-      scheduledFireDate: { lte: now },
+      ...(options.jobId
+        ? { id: options.jobId }
+        : { scheduledFireDate: { lte: now } }),
       ...(options.regnNo ? { vehicleRegnNo: options.regnNo } : {}),
     },
     include: { vehicle: true },
@@ -179,6 +183,11 @@ export async function fireDueCallJobs(
             outcome: result.outcome,
             proposedAppointmentDate: result.proposedAppointmentDate,
             notes: result.notes,
+            calleCallId: result.calleCallId,
+            providerCallId: result.providerCallId,
+            providerAttemptStatus: result.providerAttemptStatus,
+            providerFailureCode: result.providerFailureCode,
+            providerFailureMessage: result.providerFailureMessage,
           },
         }),
         prisma.callJob.update({

@@ -12,6 +12,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model WorkshopSettings {
+  id                 String   @id @default("default")
+  businessName       String
+  address            String?
+  operatingHours     String?
+  serviceDescription String?
+  phoneNumber        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
 model Vehicle {
   regnNo              String     @id
   makeModel           String
@@ -65,6 +76,11 @@ model CallResult {
   outcome                 CallOutcome
   proposedAppointmentDate DateTime?
   notes                   String?
+  calleCallId             String?
+  providerCallId          String?
+  providerAttemptStatus   String?
+  providerFailureCode     String?
+  providerFailureMessage  String?
 }
 
 enum CallOutcome {

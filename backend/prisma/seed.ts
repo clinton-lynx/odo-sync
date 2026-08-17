@@ -13,6 +13,10 @@ import {
   stageFireDate,
   computeNextDueDate,
 } from "../src/lib/scheduling.js";
+import {
+  DEFAULT_WORKSHOP_INFO,
+  WORKSHOP_SETTINGS_ID,
+} from "../src/lib/workshop.js";
 
 /**
  * Seeds demo fleet vehicles spread across the 15/10/5-day reminder windows.
@@ -40,22 +44,22 @@ interface DemoVehicle {
 const DEMO_VEHICLES: DemoVehicle[] = [
   // ---- Due in ~15 days → FIFTEEN_DAY call due today ----
   {
-    regnNo: "KA01AB1234",
+    regnNo: "LND-234-KJA",
     makeModel: "Toyota Camry",
-    ownerName: "Priya Sharma",
-    phoneNumber: "+919876543210",
-    company: "Acme Logistics",
+    ownerName: "Chinedu Okafor",
+    phoneNumber: "+2340000000001",
+    company: "Lagos Logistics",
     department: "Sales Fleet",
     lastServiceMileage: 42000,
     preferredWindow: CallWindow.MORNING,
     dueInDays: 15,
   },
   {
-    regnNo: "KA05CD5678",
+    regnNo: "KJA-100-HDJ",
     makeModel: "Honda City",
-    ownerName: "Rahul Verma",
-    phoneNumber: "+919812345678",
-    company: "Acme Logistics",
+    ownerName: "Amina Bello",
+    phoneNumber: "+2340000000002",
+    company: "Lagos Logistics",
     department: "Operations",
     lastServiceMileage: 31500,
     preferredWindow: CallWindow.AFTERNOON,
@@ -63,22 +67,22 @@ const DEMO_VEHICLES: DemoVehicle[] = [
   },
   // ---- Due in ~10 days → TEN_DAY call due today ----
   {
-    regnNo: "MH12EF9012",
+    regnNo: "ABJ-482-KWL",
     makeModel: "Hyundai Creta",
-    ownerName: "Anjali Menon",
-    phoneNumber: "+919900112233",
-    company: "Blue Ridge Foods",
+    ownerName: "Tunde Adeyemi",
+    phoneNumber: "+2340000000003",
+    company: "Abuja Foods",
     department: "Distribution",
     lastServiceMileage: 58200,
     preferredWindow: CallWindow.MORNING,
     dueInDays: 10,
   },
   {
-    regnNo: "MH14GH3456",
+    regnNo: "RSH-315-ABJ",
     makeModel: "Maruti Suzuki Swift",
-    ownerName: "Vikram Iyer",
-    phoneNumber: "+919000998877",
-    company: "Blue Ridge Foods",
+    ownerName: "Ngozi Eze",
+    phoneNumber: "+2340000000004",
+    company: "Abuja Foods",
     department: "Last Mile",
     lastServiceMileage: 27700,
     preferredWindow: CallWindow.EVENING,
@@ -86,22 +90,22 @@ const DEMO_VEHICLES: DemoVehicle[] = [
   },
   // ---- Due in ~5 days → FIVE_DAY call due today ----
   {
-    regnNo: "DL03IJ7890",
+    regnNo: "PHC-731-RST",
     makeModel: "Tata Nexon",
-    ownerName: "Sneha Kapoor",
-    phoneNumber: "+919345678901",
-    company: "Metro Couriers",
+    ownerName: "Ifeanyi Nwosu",
+    phoneNumber: "+2340000000005",
+    company: "Port Harcourt Couriers",
     department: "City Fleet",
     lastServiceMileage: 63400,
     preferredWindow: CallWindow.AFTERNOON,
     dueInDays: 5,
   },
   {
-    regnNo: "DL08KL2345",
+    regnNo: "RUM-264-PHC",
     makeModel: "Kia Seltos",
-    ownerName: "Arjun Nair",
-    phoneNumber: "+919456789012",
-    company: "Metro Couriers",
+    ownerName: "Zainab Musa",
+    phoneNumber: "+2340000000006",
+    company: "Port Harcourt Couriers",
     department: "Intercity",
     lastServiceMileage: 19800,
     preferredWindow: CallWindow.MORNING,
@@ -109,11 +113,11 @@ const DEMO_VEHICLES: DemoVehicle[] = [
   },
   // ---- Not yet in the reminder window (all jobs future/pending) ----
   {
-    regnNo: "TN22MN6789",
+    regnNo: "IBD-417-MAP",
     makeModel: "Volkswagen Virtus",
-    ownerName: "Deepa Rao",
-    phoneNumber: "+919567890123",
-    company: "Coastal Traders",
+    ownerName: "Kemi Afolayan",
+    phoneNumber: "+2340000000007",
+    company: "Ibadan Traders",
     department: "Admin",
     lastServiceMileage: 8100,
     preferredWindow: CallWindow.EVENING,
@@ -141,6 +145,16 @@ async function main(): Promise<void> {
   await prisma.callResult.deleteMany();
   await prisma.callJob.deleteMany();
   await prisma.vehicle.deleteMany();
+
+  await prisma.workshopSettings.upsert({
+    where: { id: WORKSHOP_SETTINGS_ID },
+    update: { ...DEFAULT_WORKSHOP_INFO, phoneNumber: null },
+    create: {
+      id: WORKSHOP_SETTINGS_ID,
+      ...DEFAULT_WORKSHOP_INFO,
+      phoneNumber: null,
+    },
+  });
 
   const now = new Date();
   const startOfToday = new Date(now);

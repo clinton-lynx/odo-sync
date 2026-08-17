@@ -210,7 +210,7 @@ export default function CloseOutPanel() {
                 />
                 <TextField
                   id="mileage"
-                  label="Odometer (km)"
+                  label="Odometer today (km)"
                   mono
                   type="number"
                   min={0}

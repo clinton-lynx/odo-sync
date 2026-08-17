@@ -14,10 +14,12 @@ import {
   type CallWindow,
   type SettingsResponse,
   type VehicleWithCount,
+  type WorkshopInfo,
 } from "@/lib/api";
 import { useAsync } from "@/lib/useAsync";
 import { windowLabel } from "@/lib/format";
 import { Panel, SectionHeading, Button, Loading, ErrorState } from "@/components/ui";
+import { controlClass, Field, TextField } from "@/components/fields";
 
 const fmtHour = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
@@ -32,11 +34,13 @@ export default function SettingsView() {
 
   const [rows, setRows] = useState<VehicleWithCount[]>([]);
   const [defaultWindow, setDefaultWindow] = useState<CallWindow | null>(null);
+  const [workshopDraft, setWorkshopDraft] = useState<WorkshopInfo | null>(null);
   const [syncedData, setSyncedData] = useState<{
     settings: SettingsResponse;
     vehicles: VehicleWithCount[];
   } | null>(null);
   const [savingDefault, setSavingDefault] = useState(false);
+  const [savingWorkshop, setSavingWorkshop] = useState(false);
   const [savingRegn, setSavingRegn] = useState<string | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -48,11 +52,12 @@ export default function SettingsView() {
     setSyncedData(data);
     setRows(data.vehicles);
     setDefaultWindow(data.settings.defaultWindow);
+    setWorkshopDraft(data.settings.workshop);
   }
 
   if (loading && !data) return <Loading label="Loading settings…" />;
   if (error && !data) return <ErrorState message={error} onRetry={reload} />;
-  if (!data || !defaultWindow) return null;
+  if (!data || !defaultWindow || !workshopDraft) return null;
 
   const { settings } = data;
   const total = rows.length || 1;
@@ -62,6 +67,36 @@ export default function SettingsView() {
     EVENING: 0,
   };
   for (const v of rows) distribution[v.preferredWindow]++;
+
+  function setWorkshopField<K extends keyof WorkshopInfo>(
+    key: K,
+    value: WorkshopInfo[K],
+  ) {
+    setWorkshopDraft((current) =>
+      current ? { ...current, [key]: value } : current,
+    );
+  }
+
+  async function saveWorkshop() {
+    const draft = workshopDraft;
+    if (!draft) return;
+    if (!draft.businessName.trim()) {
+      setNotice("Business name is required.");
+      return;
+    }
+    setSavingWorkshop(true);
+    setNotice(null);
+    try {
+      const res = await api.updateSettings({ workshop: draft });
+      setWorkshopDraft(res.workshop);
+      setNotice("Workshop profile saved.");
+      reload();
+    } catch (e) {
+      setNotice(String((e as Error)?.message ?? e));
+    } finally {
+      setSavingWorkshop(false);
+    }
+  }
 
   async function chooseDefault(w: CallWindow) {
     if (w === defaultWindow) return;
@@ -128,6 +163,73 @@ export default function SettingsView() {
 
       {/* workshop defaults */}
       <Panel className="p-5">
+        <div className="mb-6 border-b border-line pb-5">
+          <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted">
+            Workshop profile
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <TextField
+              id="workshopBusinessName"
+              label="Business name"
+              required
+              value={workshopDraft.businessName}
+              onChange={(event) =>
+                setWorkshopField("businessName", event.target.value)
+              }
+            />
+            <TextField
+              id="workshopPhoneNumber"
+              label="Callback phone"
+              mono
+              value={workshopDraft.phoneNumber ?? ""}
+              onChange={(event) =>
+                setWorkshopField("phoneNumber", event.target.value)
+              }
+            />
+            <TextField
+              id="workshopAddress"
+              label="Address"
+              value={workshopDraft.address ?? ""}
+              onChange={(event) =>
+                setWorkshopField("address", event.target.value)
+              }
+            />
+            <TextField
+              id="workshopOperatingHours"
+              label="Operating hours"
+              value={workshopDraft.operatingHours ?? ""}
+              onChange={(event) =>
+                setWorkshopField("operatingHours", event.target.value)
+              }
+            />
+          </div>
+          <div className="mt-4">
+            <Field
+              label="Service description"
+              htmlFor="workshopServiceDescription"
+            >
+              <textarea
+                id="workshopServiceDescription"
+                rows={3}
+                value={workshopDraft.serviceDescription ?? ""}
+                onChange={(event) =>
+                  setWorkshopField("serviceDescription", event.target.value)
+                }
+                className={`${controlClass} resize-y`}
+              />
+            </Field>
+          </div>
+          <div className="mt-4">
+            <Button
+              variant="secondary"
+              onClick={saveWorkshop}
+              disabled={savingWorkshop || !workshopDraft.businessName.trim()}
+            >
+              {savingWorkshop ? "Saving…" : "Save workshop profile"}
+            </Button>
+          </div>
+        </div>
+
         <div className="grid gap-6 sm:grid-cols-[auto_1fr]">
           <div>
             <div className="text-xs font-medium uppercase tracking-[0.14em] text-muted">

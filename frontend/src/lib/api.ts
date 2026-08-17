@@ -28,6 +28,14 @@ export type CallOutcome =
 export const CALL_WINDOWS: CallWindow[] = ["MORNING", "AFTERNOON", "EVENING"];
 export const CALL_STAGES: CallStage[] = ["FIFTEEN_DAY", "TEN_DAY", "FIVE_DAY"];
 
+export interface WorkshopInfo {
+  businessName: string;
+  address?: string;
+  operatingHours?: string;
+  serviceDescription?: string;
+  phoneNumber?: string;
+}
+
 /* ------------------------------------------------------------------ */
 /* Entity types                                                        */
 /* ------------------------------------------------------------------ */
@@ -53,6 +61,11 @@ export interface CallResult {
   outcome: CallOutcome;
   proposedAppointmentDate: string | null;
   notes: string | null;
+  calleCallId: string | null;
+  providerCallId: string | null;
+  providerAttemptStatus: string | null;
+  providerFailureCode: string | null;
+  providerFailureMessage: string | null;
 }
 
 export interface CallJob {
@@ -110,6 +123,7 @@ export interface FireSummary {
 }
 
 export interface SettingsResponse {
+  workshop: WorkshopInfo;
   defaultWindow: CallWindow;
   serviceIntervalDays: number;
   windows: Record<CallWindow, { startHour: number; endHour: number }>;
@@ -117,6 +131,7 @@ export interface SettingsResponse {
 }
 
 export interface UpdateSettingsResponse {
+  workshop: WorkshopInfo;
   defaultWindow: CallWindow;
   updatedVehicles: number;
 }
@@ -144,6 +159,7 @@ export type UpdateVehicleInput = Partial<Omit<NewVehicleInput, "regnNo">>;
 export interface FireInput {
   respectWindow?: boolean;
   regnNo?: string;
+  jobId?: string;
   limit?: number;
 }
 
@@ -154,6 +170,7 @@ export interface CloseOutInput {
 }
 
 export interface UpdateSettingsInput {
+  workshop?: Partial<WorkshopInfo>;
   defaultWindow?: CallWindow;
   applyToAllVehicles?: CallWindow;
 }

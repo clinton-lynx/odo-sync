@@ -182,8 +182,8 @@ export default function IntakeForm() {
                   label="Phone"
                   mono
                   required
-                  placeholder="+919812345678"
-                  hint="E.164 format — masked everywhere it's shown."
+                  placeholder="08012345678"
+                  hint="Nigerian 0 format or international + format. Masked wherever shown."
                   value={form.phoneNumber}
                   onChange={(e) => set("phoneNumber", e.target.value)}
                 />
@@ -196,7 +196,7 @@ export default function IntakeForm() {
                 />
                 <TextField
                   id="lastServiceMileage"
-                  label="Odometer (km)"
+                  label="Odometer at last service (km)"
                   mono
                   type="number"
                   min={0}

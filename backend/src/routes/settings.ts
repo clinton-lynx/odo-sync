@@ -3,18 +3,17 @@ import { CallWindow } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, HttpError } from "../lib/http.js";
 import { SERVICE_INTERVAL_DAYS, WINDOW_HOURS } from "../lib/scheduling.js";
+import { getWorkshopInfo, updateWorkshopInfo } from "../lib/workshop.js";
+import type { WorkshopInfo } from "../lib/workshop.js";
 
 const router = Router();
 
 /**
  * Call-time-window preferences.
  *
- * The data model (per the PRD) has no Settings table — the per-vehicle
- * `preferredWindow` is the source of truth. So "settings" here exposes the
- * window definitions + the current distribution across vehicles, lets you set a
- * process-level default window for new intakes, and can bulk-apply a window to
- * every vehicle. The default-window value lives in process memory (documented,
- * resets on restart); bulk-apply is fully persisted.
+ * Workshop identity/context is stored in the singleton WorkshopSettings row.
+ * Call-window distribution remains vehicle-backed; the default window is still
+ * process-local until the broader scheduling-settings persistence work lands.
  */
 
 let defaultWindow: CallWindow = CallWindow.MORNING;
@@ -27,6 +26,33 @@ function parseWindow(value: unknown): CallWindow {
     400,
     `Invalid window: expected one of ${Object.keys(CallWindow).join(", ")}`,
   );
+}
+
+function parseWorkshopPatch(value: unknown): Partial<WorkshopInfo> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "workshop must be an object");
+  }
+  const source = value as Record<string, unknown>;
+  const patch: Partial<WorkshopInfo> = {};
+  const fields = [
+    "businessName",
+    "address",
+    "operatingHours",
+    "serviceDescription",
+    "phoneNumber",
+  ] as const;
+  for (const field of fields) {
+    const fieldValue = source[field];
+    if (fieldValue === undefined) continue;
+    if (typeof fieldValue !== "string") {
+      throw new HttpError(400, `${field} must be a string`);
+    }
+    patch[field] = fieldValue;
+  }
+  if (patch.businessName !== undefined && !patch.businessName.trim()) {
+    throw new HttpError(400, "Workshop business name cannot be empty");
+  }
+  return patch;
 }
 
 // GET /api/settings — window config + live distribution across vehicles.
@@ -47,6 +73,7 @@ router.get(
     }
 
     res.json({
+      workshop: await getWorkshopInfo(),
       defaultWindow,
       serviceIntervalDays: SERVICE_INTERVAL_DAYS,
       windows: Object.fromEntries(
@@ -60,13 +87,15 @@ router.get(
   }),
 );
 
-// PATCH /api/settings — set the default window and/or bulk-apply a window.
-// Body: { defaultWindow?: CallWindow, applyToAllVehicles?: CallWindow }
+// PATCH /api/settings — update workshop facts, default window, and/or vehicles.
 router.patch(
   "/",
   asyncHandler(async (req, res) => {
     const b = req.body ?? {};
     let updatedVehicles = 0;
+    const workshop = b.workshop !== undefined
+      ? await updateWorkshopInfo(parseWorkshopPatch(b.workshop))
+      : await getWorkshopInfo();
 
     if (b.defaultWindow !== undefined) {
       defaultWindow = parseWindow(b.defaultWindow);
@@ -80,7 +109,7 @@ router.patch(
       updatedVehicles = result.count;
     }
 
-    res.json({ defaultWindow, updatedVehicles });
+    res.json({ workshop, defaultWindow, updatedVehicles });
   }),
 );
 

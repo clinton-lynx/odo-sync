@@ -25,6 +25,16 @@ export function formatDate(iso: string | null | undefined): string {
   });
 }
 
+export function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+}
+
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -73,7 +83,11 @@ export function maskPhone(phone: string): string {
   const plus = trimmed.startsWith("+");
   const digits = trimmed.replace(/\D/g, "");
   if (digits.length <= 4) return trimmed || "—";
-  const cc = plus ? digits.slice(0, 2) : "";
+  const cc = plus
+    ? digits.startsWith("234")
+      ? digits.slice(0, 3)
+      : digits.slice(0, 2)
+    : "";
   const last = digits.slice(-2);
   const hidden = Math.max(4, digits.length - cc.length - 2);
   return `${plus ? `+${cc} ` : ""}${"•".repeat(hidden)} ${last}`;

@@ -58,7 +58,7 @@ router.get(
 );
 
 // POST /api/call-jobs/fire — manually trigger the scheduler pass (demo/ops).
-// Body/query: { respectWindow?: boolean (default false), regnNo?: string, limit?: number }
+// A jobId targets one pending job immediately, even before its scheduled date.
 router.post(
   "/fire",
   asyncHandler(async (req, res) => {
@@ -66,6 +66,7 @@ router.post(
     const summary = await fireDueCallJobs({
       respectWindow: src.respectWindow === true || src.respectWindow === "true",
       regnNo: typeof src.regnNo === "string" ? src.regnNo : undefined,
+      jobId: typeof src.jobId === "string" ? src.jobId : undefined,
       limit: src.limit != null ? Number(src.limit) : undefined,
     });
     res.json(summary);

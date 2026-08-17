@@ -1,5 +1,34 @@
 # OdoSync
 
+Automated vehicle service reminders, built on [CALL-E](https://call-e.devpost.com/).
+
+## Why I built this
+
+Last year, during my industrial training, I worked at a Toyota-franchise
+auto workshop as a mechanical engineering student. Every vehicle that came
+in got logged by hand. And when it was time for the next service, someone
+had to sit down with a ledger and start calling customers one by one — 15
+days before it's due, then 10 days, then 5. That's the actual standard
+these workshops follow.
+
+I watched that happen over and over. It's slow, it's easy to lose track of
+someone, and it just doesn't scale past a certain fleet size. So when I saw
+the CALL-E hackathon, this was the obvious thing to build: something that
+does that job automatically, with real phone calls, instead of someone
+sitting with a phone and a spreadsheet.
+
+That's OdoSync.
+
+## Live demo
+
+- App: [odosync.vercel.app](https://odosync.vercel.app)
+- API health: [odosync-backend-production.up.railway.app/health](https://odosync-backend-production.up.railway.app/health)
+
+The public demo runs CALL-E in dry-run mode so the seeded placeholder contacts
+cannot receive outbound calls.
+
+## How it works
+
 OdoSync phones fleet-vehicle owners **ahead of their next service due date** to
 book an appointment. For every vehicle it schedules three reminder calls — **15,
 10 and 5 days** before the service is due — and places them (via
@@ -27,7 +56,7 @@ forward to the next due date.
 └─────────────────────────┘                                  │  ├─ /api/call-jobs         │
                                                               │  ├─ /api/settings          │
                                                               │  ├─ node-cron scheduler ───┼─▶ fireDueCallJobs()
-                                                              │  └─ CALL-E integration ────┼─▶ real call / dry-run
+                                                              │  └─ @call-e/calle SDK ──────┼─▶ real call / dry-run
                                                               └─────────────┬──────────────┘
                                                                             │ Prisma
                                                                             ▼
@@ -44,6 +73,38 @@ forward to the next due date.
   the internal `fireDueCallJobs()` function directly — no self-HTTP.
 - **CALL-E** places real outbound calls only when `CALLE_API_KEY` is set;
   otherwise the backend runs in **DRY-RUN** mode and simulates every call.
+
+---
+
+## Product walkthrough
+
+### Dashboard
+
+The dashboard puts today's due-call queue, booking and reach metrics, and recent
+fleet activity in one place.
+
+![Dashboard with seeded fleet data](docs/screenshots/dashboard.png)
+
+### Close-out
+
+Closing out a completed service advances the vehicle's service cycle. Before I
+submit it, the UI previews the next due date and the exact 15-, 10-, and 5-day
+reminder dates that will be written.
+
+![Close-out preview with three dated reminders](docs/screenshots/close-out.png)
+
+### Activity
+
+Activity keeps pending jobs and real or simulated outcomes together, including
+booked, callback, no-answer, and declined results. Pending rows can also be
+fired or cancelled directly.
+
+![Activity log with mixed statuses and outcomes](docs/screenshots/activity.png)
+
+### Settings
+
+The workshop profile and call-window defaults live in Postgres and feed the
+next CALL-E task without requiring a backend restart.
 
 ---
 
@@ -79,6 +140,16 @@ npm run prisma:generate       # generate the Prisma client
 npm run prisma:migrate        # create/apply the migration (dev)
 npm run db:seed               # (optional) load demo fleet data
 ```
+
+The seed also creates the database-backed workshop profile used in CALL-E
+scripts. Change its name, address, hours, service description, and callback
+number from the app's Settings screen. Saved changes apply to the next call
+without restarting the backend.
+
+Live CALL-E results also retain the CALL-E task ID, provider call ID, attempt
+status, and provider failure code/message in Activity. Use those fields when a
+call reaches a handset but disconnects immediately; `NO_ANSWER` alone is only
+the normalized outcome and is not a provider diagnosis.
 
 For a non-dev database (e.g. hosted), use `npm run prisma:deploy` instead of
 `prisma:migrate` to apply existing migrations without prompting.
@@ -156,6 +227,57 @@ dialing anyone or needing credentials.
 
 ---
 
+## Technical details
+
+### Setup
+
+Use the [Setup](#setup) and [Running](#running-two-dev-servers) instructions
+above. They cover dependency installation, Prisma generation and migrations,
+optional demo seeding, and both local processes.
+
+### Side effects
+
+This app places **real outbound phone calls to real people** when
+`CALLE_API_KEY` is set and a call job fires, either manually through **Call
+now** (or the firing API) or automatically through the scheduler. Normal app
+use also writes vehicles, workshop settings, scheduled jobs, cancellations,
+and call results to the app's PostgreSQL database. There are no external writes
+beyond CALL-E and OdoSync's own Postgres database.
+
+### Cancellation
+
+Closing out a vehicle cancels all of that vehicle's existing `PENDING` jobs
+before creating the next 15-, 10-, and 5-day cycle, which prevents duplicate
+pending reminders. An individual pending job can be cancelled from its expanded
+Activity row or directly with `POST /api/call-jobs/:id/cancel`. A job that has
+already fired cannot be cancelled through OdoSync.
+
+### Credential handling
+
+`CALLE_API_KEY` and `DATABASE_URL` are read from environment variables only;
+they are never hardcoded or committed. [`backend/.env.example`](backend/.env.example)
+is the backend template, and `frontend/.env.local.example` is the frontend
+template. The root and package `.gitignore` files exclude `.env`, `.env.local`,
+and `.env.*.local` files.
+
+### Dry-run behavior
+
+With no `CALLE_API_KEY`, OdoSync runs in **DRY-RUN** mode. It constructs and
+logs the same CALL-E task, recipients, result schema, and metadata payload that
+live mode sends, then returns a deterministic simulated `BOOKED` result. The
+same scheduler and persistence flow still runs, so jobs become `FIRED` and a
+`CallResult` is stored without dialing anyone.
+
+### Test coverage
+
+Current verification: **9 backend tests** covering Nigerian phone routing and
+normalization, CALL-E task construction, stage-specific scripts, and live
+workshop-setting refresh. The backend test suite, typecheck, and production
+build pass; the frontend lint and production build pass. There are not yet
+automated API-route, scheduler, or browser tests.
+
+---
+
 ## API reference
 
 | Method | Path                          | Purpose                                               |
@@ -178,24 +300,34 @@ dialing anyone or needing credentials.
 
 ## Environment variables
 
-### Backend (`backend/.env`)
+| Variable | Required? | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | PostgreSQL connection string used by Prisma. |
+| `CALLE_API_KEY` | No | Enables live outbound calls. Empty or unset selects DRY-RUN mode. |
+| `CALLE_BASE_URL` | No | Overrides the CALL-E SDK's default production API base URL. |
+| `PORT` | No | Express listen port; defaults to `4000`. |
+| `CORS_ORIGIN` | No | Browser origin allowed by Express CORS; defaults to `http://localhost:3000`. |
+| `SCHEDULER_ENABLED` | No | Set to `false` to stop the scheduler from starting inside the API process; defaults to `true`. |
+| `SCHEDULER_CRON` | No | Cron expression for due-job checks; defaults to every minute (`* * * * *`). |
+| `SERVICE_INTERVAL_DAYS` | No | Days from a completed service to the next due date; defaults to `180`. |
+| `NODE_ENV` | No | Uses quieter Prisma logging in `production`; normally set by the runtime/toolchain. |
+| `NEXT_PUBLIC_API_URL` | No | Frontend-visible Express API base URL; defaults to `http://localhost:4000` and is embedded at frontend build/startup. |
 
-| Variable                | Default                                                        | Notes                                        |
-| ----------------------- | ------------------------------------------------------------- | -------------------------------------------- |
-| `DATABASE_URL`          | `postgresql://odosync:odosync@localhost:5432/odosync?schema=public` | Postgres connection string             |
-| `PORT`                  | `4000`                                                        | API port                                     |
-| `CORS_ORIGIN`           | `http://localhost:3000`                                       | Allowed frontend origin                      |
-| `CALLE_API_KEY`         | *(empty)*                                                     | Empty → DRY-RUN; set → live calls            |
-| `CALLE_BASE_URL`        | *(unset)*                                                     | Optional CALL-E API base URL override        |
-| `SCHEDULER_CRON`        | `* * * * *`                                                   | Cron cadence for the in-process scheduler    |
-| `SCHEDULER_ENABLED`     | `true`                                                        | Set `false` to not start the scheduler       |
-| `SERVICE_INTERVAL_DAYS` | `180`                                                         | Days from last service to next due date      |
+---
 
-### Frontend (`frontend/.env.local`)
+## Troubleshooting
 
-| Variable              | Default                 | Notes                          |
-| --------------------- | ----------------------- | ------------------------------ |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | Base URL of the backend API    |
+- **Railway database URLs:** Railway's private database URL works only between
+  services on Railway's internal network. Local development needs the public
+  proxy URL and port shown by Railway.
+- **Restart after environment changes:** environment variables load when a
+  process starts. Restart the backend after changing `backend/.env`, and restart
+  or rebuild the frontend after changing `NEXT_PUBLIC_API_URL`; refreshing the
+  browser is not enough.
+- **Nigerian phone routing:** store Nigerian numbers in `+234` E.164 form (local
+  `0...` numbers are normalized). OdoSync sends `region: "NG"` and
+  `locale: "en-NG"` for `+234` recipients because those explicit hints make
+  CALL-E delivery more reliable.
 
 ---
 
